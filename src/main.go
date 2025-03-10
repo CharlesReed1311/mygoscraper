@@ -31,7 +31,7 @@ func main() {
 	}
 	prefork := os.Getenv("PREFORK")
 	if prefork == "" {
-		prefork = "true"
+		prefork = "false"
 	}
 
 	app := fiber.New(fiber.Config{
