@@ -16,7 +16,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/etag"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
-	"github.com/gofiber/fiber/v2/middleware/recover"
+	recoverMiddleware "github.com/gofiber/fiber/v2/middleware/recover" // ✅ Renamed import
 	"github.com/joho/godotenv"
 )
 
@@ -69,8 +69,8 @@ func main() {
 		},
 	})
 
-	// Middleware
-	app.Use(recover.New())
+	// ✅ Use the renamed recover middleware
+	app.Use(recoverMiddleware.New())
 	app.Use(compress.New(compress.Config{Level: compress.LevelBestSpeed}))
 	app.Use(etag.New())
 
