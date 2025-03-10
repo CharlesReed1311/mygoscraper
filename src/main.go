@@ -16,12 +16,12 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/etag"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
-	recoverMiddleware "github.com/gofiber/fiber/v2/middleware/recover" // ✅ Renamed import
+	recoverMiddleware "github.com/gofiber/fiber/v2/middleware/recover" // ✅ Renamed to prevent conflicts
 	"github.com/joho/godotenv"
 )
 
 func main() {
-	// Properly using defer with recover to catch panics
+	// ✅ Properly handling panics with recover()
 	defer func() {
 		if r := recover(); r != nil {
 			log.Fatalf("🚨 Application crashed due to panic: %v", r)
@@ -50,14 +50,15 @@ func main() {
 	}
 	log.Printf("🚀 Starting server on port %s...\n", port)
 
-	// Ensure Prefork is disabled (fixing previous issues)
-	prefork := os.Getenv("PREFORK")
-	usePrefork := false
-	if prefork == "true" || prefork == "1" {
-		usePrefork = true
+	// ✅ Enable Prefork for performance
+	usePrefork := true
+	preforkEnv := os.Getenv("PREFORK")
+	if preforkEnv == "false" || preforkEnv == "0" {
+		usePrefork = false
 	}
+	log.Printf("⚡ Prefork mode enabled: %v\n", usePrefork)
 
-	// Initialize Fiber
+	// Initialize Fiber with Prefork enabled
 	app := fiber.New(fiber.Config{
 		Prefork:      usePrefork,
 		ServerHeader: "GoScraper",
