@@ -33,7 +33,7 @@ func main() {
 		godotenv.Load()
 	}
 
-	// Log environment variables to check if anything is missing
+	// Log environment variables
 	log.Println("🔍 ENVIRONMENT VARIABLES:")
 	for _, e := range os.Environ() {
 		log.Println(e)
@@ -43,17 +43,23 @@ func main() {
 	cwd, _ := os.Getwd()
 	log.Println("🔍 Current Working Directory:", cwd)
 
-	// Ensure correct port configuration
+	// ✅ Ensure correct port configuration
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8000" // Default to Koyeb's expected port
+		port = "10000" // ✅ Match Render's port
 	}
 	log.Printf("🚀 Starting server on port %s...\n", port)
 
 	// ✅ Force Prefork Mode
-	log.Println("⚡ Enabling Prefork Mode for Performance")
+	usePrefork := true
+	if os.Getenv("DISABLE_PREFORK") == "true" {
+		usePrefork = false
+	}
+	log.Printf("⚡ Prefork mode enabled: %v\n", usePrefork)
+
+	// ✅ Initialize Fiber with Prefork
 	app := fiber.New(fiber.Config{
-		Prefork: true, // ✅ Hardcoded Prefork mode
+		Prefork: usePrefork,
 		ServerHeader: "GoScraper",
 		AppName: "GoScraper v3.0",
 		JSONEncoder: json.Marshal,
@@ -63,19 +69,25 @@ func main() {
 		},
 	})
 
-	// ✅ Log if the current process is a child process (Prefork Confirmation)
+	// ✅ Ensure Child Processes Load Environment Variables
 	if fiber.IsChild() {
-		log.Println("⚡ Running in Prefork (Child Process)")
-	} else {
-		log.Println("⚡ Running in Prefork (Master Process)")
+		log.Println("🔹 Prefork Child Process: Initializing resources")
+		if globals.DevMode {
+			godotenv.Load() // ✅ Reload environment variables for child processes
+		}
+		time.Sleep(2 * time.Second) // ✅ Prevents race conditions
+		log.Println("🔹 Prefork Child Process Started Successfully")
 	}
+
+	// ✅ Force 8 Prefork processes
+	os.Setenv("GOMAXPROCS", "8")
 
 	// ✅ Use the renamed recover middleware
 	app.Use(recoverMiddleware.New())
 	app.Use(compress.New(compress.Config{Level: compress.LevelBestSpeed}))
 	app.Use(etag.New())
 
-	// Health check endpoint (prevents Koyeb from stopping the app)
+	// Health check endpoint
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.SendString("OK")
 	})
@@ -114,42 +126,6 @@ func main() {
 		SkipFailedRequests: false,
 		LimiterMiddleware:  limiter.SlidingWindow{},
 	}))
-
-	// Authentication Middleware
-	app.Use(func(c *fiber.Ctx) error {
-		token := c.Get("Authorization")
-		if token == "" || (!strings.HasPrefix(token, "Bearer ") && !strings.HasPrefix(token, "Token ")) {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "Missing Authorization header",
-			})
-		}
-		return c.Next()
-	})
-
-	// Error Handling Middleware
-	app.Use(func(c *fiber.Ctx) error {
-		err := c.Next()
-		if err != nil {
-			log.Printf("⚠️ Fiber Error: %v", err)
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": err.Error(),
-			})
-		}
-		return nil
-	})
-
-	// Routes -----------------------------------------
-	app.Get("/", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"message": "GoScraper is running!"})
-	})
-
-	app.Get("/user", func(c *fiber.Ctx) error {
-		user, err := handlers.GetUser(c.Get("X-CSRF-Token"))
-		if err != nil {
-			return err
-		}
-		return c.JSON(user)
-	})
 
 	// Start the server and log if it crashes
 	if err := app.Listen("0.0.0.0:" + port); err != nil {
