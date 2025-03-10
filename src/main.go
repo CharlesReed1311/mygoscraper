@@ -50,25 +50,25 @@ func main() {
 	}
 	log.Printf("🚀 Starting server on port %s...\n", port)
 
-	// ✅ Enable Prefork for performance
-	usePrefork := true
-	preforkEnv := os.Getenv("PREFORK")
-	if preforkEnv == "false" || preforkEnv == "0" {
-		usePrefork = false
-	}
-	log.Printf("⚡ Prefork mode enabled: %v\n", usePrefork)
-
-	// Initialize Fiber with Prefork enabled
+	// ✅ Force Prefork Mode
+	log.Println("⚡ Enabling Prefork Mode for Performance")
 	app := fiber.New(fiber.Config{
-		Prefork:      usePrefork,
+		Prefork: true, // ✅ Hardcoded Prefork mode
 		ServerHeader: "GoScraper",
-		AppName:      "GoScraper v3.0",
-		JSONEncoder:  json.Marshal,
-		JSONDecoder:  json.Unmarshal,
+		AppName: "GoScraper v3.0",
+		JSONEncoder: json.Marshal,
+		JSONDecoder: json.Unmarshal,
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			return utils.HandleError(c, err)
 		},
 	})
+
+	// ✅ Log if the current process is a child process (Prefork Confirmation)
+	if fiber.IsChild() {
+		log.Println("⚡ Running in Prefork (Child Process)")
+	} else {
+		log.Println("⚡ Running in Prefork (Master Process)")
+	}
 
 	// ✅ Use the renamed recover middleware
 	app.Use(recoverMiddleware.New())
