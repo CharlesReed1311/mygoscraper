@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -10,12 +9,9 @@ import (
 
 	"goscraper/src/globals"
 	"goscraper/src/handlers"
-	"goscraper/src/helpers/databases"
-	"goscraper/src/types"
 	"goscraper/src/utils"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cache"
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/etag"
@@ -25,7 +21,7 @@ import (
 )
 
 func main() {
-	// Catch any panic before the app crashes
+	// Properly using defer with recover to catch panics
 	defer func() {
 		if r := recover(); r != nil {
 			log.Fatalf("🚨 Application crashed due to panic: %v", r)
@@ -37,13 +33,13 @@ func main() {
 		godotenv.Load()
 	}
 
-	// Log all environment variables (to check missing ones)
+	// Log environment variables to check if anything is missing
 	log.Println("🔍 ENVIRONMENT VARIABLES:")
 	for _, e := range os.Environ() {
 		log.Println(e)
 	}
 
-	// Print current working directory (to check correct path)
+	// Log current working directory
 	cwd, _ := os.Getwd()
 	log.Println("🔍 Current Working Directory:", cwd)
 
@@ -54,10 +50,10 @@ func main() {
 	}
 	log.Printf("🚀 Starting server on port %s...\n", port)
 
-	// Disable Prefork to prevent Koyeb issues
+	// Ensure Prefork is disabled (fixing previous issues)
 	prefork := os.Getenv("PREFORK")
-	usePrefork := false // Default to false
-	if prefork != "" && (prefork == "true" || prefork == "1") {
+	usePrefork := false
+	if prefork == "true" || prefork == "1" {
 		usePrefork = true
 	}
 
