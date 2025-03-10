@@ -35,7 +35,7 @@ func main() {
 	}
 
 	app := fiber.New(fiber.Config{
-		Prefork:      prefork == "true",
+		Prefork:      prefork == "false",
 		ServerHeader: "GoScraper",
 		AppName:      "GoScraper v3.0",
 		JSONEncoder:  json.Marshal,
@@ -368,7 +368,7 @@ func main() {
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "8000"
 	}
 	log.Printf("Starting server on port %s...", port)
 	if err := app.Listen("0.0.0.0:" + port); err != nil {
