@@ -195,8 +195,8 @@ func main() {
 
 	app.Post("/login", func(c *fiber.Ctx) error {
 		var creds struct {
-			Username string json:"account"
-			Password string json:"password"
+			Username string `json:"account"`
+			Password string `json:"password"`
 		}
 
 		if err := c.BodyParser(&creds); err != nil {
