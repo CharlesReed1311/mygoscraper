@@ -1,43 +1,39 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
 	"os"
-	"strings"
-	"time"
 
-	"goscraper/src/globals"
-
-	"github.com/joho/godotenv"
+	"goscraper/src/handlers"
+	"goscraper/src/helpers/databases"
+	"goscraper/src/types"
+	"goscraper/src/utils"
 )
 
 func main() {
-	if globals.DevMode {
-		_ = godotenv.Load()
-	}
-
 	token := os.Getenv("CRON_TOKEN")
 	if token == "" {
-		log.Fatalln("CRON_TOKEN not provided")
+		log.Fatal("CRON_TOKEN environment variable not set")
 	}
-
-	log.Println("Running in cron job mode with token:", token)
 
 	data, err := fetchAllData(token)
 	if err != nil {
-		log.Fatalf("Data fetch failed: %v", err)
+		log.Fatalf("Error fetching data: %v", err)
 	}
 
-	data["token"] = encode(token)
+	encodedToken := utils.Encode(token)
+	data["token"] = encodedToken
 
-	db, err := newDB()
+	db, err := databases.NewDatabaseHelper()
 	if err != nil {
-		log.Fatalf("Database connection failed: %v", err)
+		log.Fatalf("Database initialization error: %v", err)
 	}
 
 	err = db.UpsertData("goscrape", data)
 	if err != nil {
-		log.Fatalf("Failed to upsert data: %v", err)
+		log.Fatalf("Database upsert error: %v", err)
 	}
 
 	log.Println("Data successfully fetched and stored.")
@@ -53,23 +49,23 @@ func fetchAllData(token string) (map[string]interface{}, error) {
 	resultChan := make(chan result, 5)
 
 	go func() {
-		data, err := getUser(token)
+		data, err := handlers.GetUser(token)
 		resultChan <- result{"user", data, err}
 	}()
 	go func() {
-		data, err := getAttendance(token)
+		data, err := handlers.GetAttendance(token)
 		resultChan <- result{"attendance", data, err}
 	}()
 	go func() {
-		data, err := getMarks(token)
+		data, err := handlers.GetMarks(token)
 		resultChan <- result{"marks", data, err}
 	}()
 	go func() {
-		data, err := getCourses(token)
+		data, err := handlers.GetCourses(token)
 		resultChan <- result{"courses", data, err}
 	}()
 	go func() {
-		data, err := getTimetable(token)
+		data, err := handlers.GetTimetable(token)
 		resultChan <- result{"timetable", data, err}
 	}()
 
@@ -82,14 +78,13 @@ func fetchAllData(token string) (map[string]interface{}, error) {
 		data[r.key] = r.data
 	}
 
-	if user, ok := data["user"].(map[string]interface{}); ok {
-		data["regNumber"] = user["RegNumber"]
+	if user, ok := data["user"].(*types.User); ok {
+		data["regNumber"] = user.RegNumber
 	}
 
-	// Optionally fetch ophour from db
-	db, err := newDB()
+	db, err := databases.NewDatabaseHelper()
 	if err == nil {
-		encodedToken := encode(token)
+		encodedToken := utils.Encode(token)
 		ophour, err := db.GetOphourByToken(encodedToken)
 		if err == nil && ophour != "" {
 			data["ophour"] = ophour
@@ -97,29 +92,4 @@ func fetchAllData(token string) (map[string]interface{}, error) {
 	}
 
 	return data, nil
-}
-
-func encode(str string) string {
-	// wrapper for utils.Encode
-	return utils.Encode(str)
-}
-
-func getUser(token string) (interface{}, error) {
-	return handlers.GetUser(token)
-}
-func getAttendance(token string) (interface{}, error) {
-	return handlers.GetAttendance(token)
-}
-func getMarks(token string) (interface{}, error) {
-	return handlers.GetMarks(token)
-}
-func getCourses(token string) (interface{}, error) {
-	return handlers.GetCourses(token)
-}
-func getTimetable(token string) (interface{}, error) {
-	return handlers.GetTimetable(token)
-}
-
-func newDB() (*databases.Helper, error) {
-	return databases.NewDatabaseHelper()
 }
