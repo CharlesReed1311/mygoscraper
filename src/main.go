@@ -12,6 +12,7 @@ import (
 	"goscraper/src/utils"
 	"log"
 	"os"
+	"net"
 
 	"time"
 
@@ -29,13 +30,9 @@ func main() {
 	if globals.DevMode {
 		godotenv.Load()
 	}
-	prefork := os.Getenv("PREFORK")
-	if prefork == "" {
-		prefork = "true"
-	}
 
 	app := fiber.New(fiber.Config{
-		Prefork:      prefork == "true",
+		Prefork:      false,
 		ServerHeader: "GoScraper",
 		AppName:      "GoScraper v3.0",
 		JSONEncoder:  json.Marshal,
@@ -330,6 +327,13 @@ func main() {
 			cachedData["timetable"] != nil &&
 			cachedData["attendance"] != nil &&
 			cachedData["marks"] != nil {
+
+			// Always fetch ophour from db and add to cachedData
+			ophour, err := db.GetOphourByToken(encodedToken)
+			if err == nil && ophour != "" {
+				cachedData["ophour"] = ophour
+			}
+
 			go func() {
 				data, err := fetchAllData(token)
 				if err != nil {
@@ -371,9 +375,13 @@ func main() {
 		port = "8080"
 	}
 	log.Printf("Starting server on port %s...", port)
-	if err := app.Listen("0.0.0.0:" + port); err != nil {
+	ln, err := net.Listen("tcp", "[::]:" + port)
+	if err != nil {
+		log.Fatalf("Failed to bind: %v", err)
+	}
+	log.Printf("Starting server on port %s...", port)
+	if err := app.Listener(ln); err != nil {
 		log.Printf("Server error: %+v", err)
-		log.Println(err)
 	}
 }
 
@@ -418,6 +426,16 @@ func fetchAllData(token string) (map[string]interface{}, error) {
 
 	if user, ok := data["user"].(*types.User); ok {
 		data["regNumber"] = user.RegNumber
+	}
+
+	// Fetch ophour from database
+	db, err := databases.NewDatabaseHelper()
+	if err == nil {
+		encodedToken := utils.Encode(token)
+		ophour, err := db.GetOphourByToken(encodedToken)
+		if err == nil && ophour != "" {
+			data["ophour"] = ophour
+		}
 	}
 
 	return data, nil
