@@ -12,7 +12,6 @@ import (
 	"goscraper/src/utils"
 	"log"
 	"os"
-	"net"
 
 	"time"
 
@@ -30,7 +29,6 @@ func main() {
 	if globals.DevMode {
 		godotenv.Load()
 	}
-
 	prefork := os.Getenv("PREFORK")
 	if prefork == "" {
 		prefork = "true"
@@ -155,6 +153,7 @@ func main() {
 		return c.Next()
 	})
 
+	// Universal error handling middleware
 	app.Use(func(c *fiber.Ctx) error {
 		err := c.Next()
 		if err != nil {
@@ -188,6 +187,8 @@ func main() {
 		}
 		return c.Next()
 	})
+
+	// Routes -----------------------------------------
 
 	app.Get("/hello", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "Hello, World!"})
@@ -302,6 +303,7 @@ func main() {
 		}
 
 		return c.JSON(dbcal)
+
 	})
 
 	api.Get("/timetable", cache.New(cacheConfig), func(c *fiber.Ctx) error {
@@ -323,16 +325,11 @@ func main() {
 
 		cachedData, err := db.FindByToken("goscrape", encodedToken)
 
+		// Check if cached data exists and all required fields are present and non-empty
 		if len(cachedData) != 0 &&
 			cachedData["timetable"] != nil &&
 			cachedData["attendance"] != nil &&
 			cachedData["marks"] != nil {
-
-			ophour, err := db.GetOphourByToken(encodedToken)
-			if err == nil && ophour != "" {
-				cachedData["ophour"] = ophour
-			}
-
 			go func() {
 				data, err := fetchAllData(token)
 				if err != nil {
@@ -367,18 +364,16 @@ func main() {
 		return c.JSON(responseData)
 	})
 
+	// ----------------------------------------------------
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 	log.Printf("Starting server on port %s...", port)
-	ln, err := net.Listen("tcp", "[::]:"+port)
-	if err != nil {
-		log.Fatalf("Failed to bind: %v", err)
-	}
-	log.Printf("Starting server on port %s...", port)
-	if err := app.Listener(ln); err != nil {
+	if err := app.Listen("0.0.0.0:" + port); err != nil {
 		log.Printf("Server error: %+v", err)
+		log.Println(err)
 	}
 }
 
@@ -423,15 +418,6 @@ func fetchAllData(token string) (map[string]interface{}, error) {
 
 	if user, ok := data["user"].(*types.User); ok {
 		data["regNumber"] = user.RegNumber
-	}
-
-	db, err := databases.NewDatabaseHelper()
-	if err == nil {
-		encodedToken := utils.Encode(token)
-		ophour, err := db.GetOphourByToken(encodedToken)
-		if err == nil && ophour != "" {
-			data["ophour"] = ophour
-		}
 	}
 
 	return data, nil
