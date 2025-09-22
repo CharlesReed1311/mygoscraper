@@ -10,15 +10,13 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/valyala/fasthttp"
-    // "github.com/joho/godotenv"
-    // "os"
 )
 
 func init() {
-    // Load .env file from the project root
-    // if err := godotenv.Load(); err != nil {
-    //     fmt.Printf("Warning: .env file not found: %v\n", err)
-    // }
+	// Load .env file from the project root
+	// if err := godotenv.Load(); err != nil {
+	// 	fmt.Printf("Warning: .env file not found: %v\n", err)
+	// }
 }
 
 type CalendarFetcher struct {
@@ -36,7 +34,6 @@ func NewCalendarFetcher(date time.Time, cookie string) *CalendarFetcher {
 func (c *CalendarFetcher) GetCalendar() (*types.CalendarResponse, error) {
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
-
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(resp)
 
@@ -74,7 +71,6 @@ func (c *CalendarFetcher) GetCalendar() (*types.CalendarResponse, error) {
 			Status:  500,
 		}, nil
 	}
-
 	calendar.Status = statusCode
 	return calendar, nil
 }
@@ -91,7 +87,6 @@ func (c *CalendarFetcher) parseCalendar(html string) (*types.CalendarResponse, e
 		decodedHTML := utils.ConvertHexToHTML(strings.Split(parts[1], "\" > </div> </div>")[0])
 		htmlText = utils.DecodeHTMLEntities(decodedHTML)
 	}
-
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlText))
 	if err != nil {
 		return nil, err
@@ -104,7 +99,6 @@ func (c *CalendarFetcher) parseCalendar(html string) (*types.CalendarResponse, e
 			monthHeaders = append(monthHeaders, month)
 		}
 	})
-
 	data := make([]types.CalendarMonth, len(monthHeaders))
 	for i := range monthHeaders {
 		data[i].Month = monthHeaders[i]
@@ -114,21 +108,21 @@ func (c *CalendarFetcher) parseCalendar(html string) (*types.CalendarResponse, e
 	doc.Find("table tr").Each(func(_ int, row *goquery.Selection) {
 		tds := row.Find("td")
 		for i := range monthHeaders {
-			pad := 0
-			if i > 0 {
-				pad = i * 5
+			pad := i * 4 // Corrected from 5 to 4 to match 4 columns per month (Date, Day, Event, DayOrder)
+			if tds.Length() <= pad+3 { // Ensure enough columns
+				continue
 			}
-
 			date := strings.TrimSpace(tds.Eq(pad).Text())
 			day := strings.TrimSpace(tds.Eq(pad + 1).Text())
 			event := strings.TrimSpace(tds.Eq(pad + 2).Text())
 			dayOrder := strings.TrimSpace(tds.Eq(pad + 3).Text())
-
+			// Clean dayOrder to remove trailing " -" and normalize
+			dayOrder = strings.TrimSpace(strings.Trim(dayOrder, " -"))
 			if date != "" && dayOrder != "" {
 				data[i].Days = append(data[i].Days, types.Day{
-					Date:     date,
-					Day:      day,
-					Event:    event,
+					Date:    date,
+					Day:     day,
+					Event:   event,
 					DayOrder: dayOrder,
 				})
 			}
@@ -141,7 +135,6 @@ func (c *CalendarFetcher) parseCalendar(html string) (*types.CalendarResponse, e
 	// Find current month entry
 	monthNames := []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
 	currentMonthName := monthNames[c.date.Month()-1]
-
 	var monthEntry types.CalendarMonth
 	var monthIndex int
 	for i, entry := range sortedData {
@@ -151,7 +144,6 @@ func (c *CalendarFetcher) parseCalendar(html string) (*types.CalendarResponse, e
 			break
 		}
 	}
-
 	if monthEntry.Month == "" {
 		monthEntry = sortedData[0]
 		monthIndex = 0
@@ -162,7 +154,6 @@ func (c *CalendarFetcher) parseCalendar(html string) (*types.CalendarResponse, e
 		todayIndex := c.date.Day() - 1
 		if todayIndex >= 0 && todayIndex < len(monthEntry.Days) {
 			today = &monthEntry.Days[todayIndex]
-
 			// Get tomorrow's date
 			tomorrowIndex := todayIndex + 1
 			if tomorrowIndex < len(monthEntry.Days) {
@@ -174,8 +165,6 @@ func (c *CalendarFetcher) parseCalendar(html string) (*types.CalendarResponse, e
 		}
 	}
 
-	// fmt.Println(today, tomorrow)
-
 	return &types.CalendarResponse{
 		Today:    today,
 		Tomorrow: tomorrow,
@@ -186,23 +175,19 @@ func (c *CalendarFetcher) parseCalendar(html string) (*types.CalendarResponse, e
 
 func SortCalendarData(data []types.CalendarMonth) []types.CalendarMonth {
 	monthNames := []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
-
 	monthIndices := make(map[string]int)
 	for i, month := range monthNames {
 		monthIndices[month] = i
 	}
-
 	for i := 0; i < len(data)-1; i++ {
 		for j := 0; j < len(data)-i-1; j++ {
 			month1 := strings.Split(data[j].Month, "'")[0][:3]
 			month2 := strings.Split(data[j+1].Month, "'")[0][:3]
-
 			if monthIndices[month1] > monthIndices[month2] {
 				data[j], data[j+1] = data[j+1], data[j]
 			}
 		}
 	}
-
 	for i := range data {
 		for j := 0; j < len(data[i].Days)-1; j++ {
 			for k := 0; k < len(data[i].Days)-j-1; k++ {
@@ -214,6 +199,5 @@ func SortCalendarData(data []types.CalendarMonth) []types.CalendarMonth {
 			}
 		}
 	}
-
 	return data
 }
