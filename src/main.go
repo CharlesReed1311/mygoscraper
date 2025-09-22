@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-
 	"goscraper/src/globals"
 	"goscraper/src/handlers"
 	"goscraper/src/helpers/databases"
@@ -13,9 +12,7 @@ import (
 	"log"
 	"os"
 	"net"
-
 	"time"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cache"
 	"github.com/gofiber/fiber/v2/middleware/compress"
@@ -30,7 +27,6 @@ func main() {
 	if globals.DevMode {
 		godotenv.Load()
 	}
-
 	app := fiber.New(fiber.Config{
 		Prefork:      false,
 		ServerHeader: "GoScraper",
@@ -41,19 +37,16 @@ func main() {
 			return utils.HandleError(c, err)
 		},
 	})
-
 	app.Use(recover.New())
 	app.Use(compress.New(compress.Config{
 		Level: compress.LevelBestSpeed,
 	}))
 	app.Use(etag.New())
-
 	urls := os.Getenv("URL")
 	allowedOrigins := "http://localhost:243"
 	if urls != "" {
 		allowedOrigins += "," + urls
 	}
-
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     allowedOrigins,
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
@@ -61,10 +54,9 @@ func main() {
 		ExposeHeaders:    "Content-Length",
 		AllowCredentials: true,
 	}))
-
 	app.Use(limiter.New(limiter.Config{
-		Max:        25,
-		Expiration: 1 * time.Minute,
+		Max:               25,
+		Expiration:        1 * time.Minute,
 		KeyGenerator: func(c *fiber.Ctx) string {
 			token := c.Get("X-CSRF-Token")
 			if token != "" {
@@ -80,13 +72,11 @@ func main() {
 		SkipFailedRequests: false,
 		LimiterMiddleware:  limiter.SlidingWindow{},
 	}))
-
 	app.Use(func(c *fiber.Ctx) error {
 		switch c.Path() {
 		case "/login", "/hello":
 			return c.Next()
 		}
-
 		token := c.Get("X-CSRF-Token")
 		if token == "" {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
@@ -95,24 +85,20 @@ func main() {
 		}
 		return c.Next()
 	})
-
 	app.Use(func(c *fiber.Ctx) error {
 		switch c.Path() {
 		case "/hello":
 			return c.Next()
 		}
-
 		if globals.DevMode {
 			return c.Next()
 		}
-
 		token := c.Get("Authorization")
 		if token == "" || (!strings.HasPrefix(token, "Bearer ") && !strings.HasPrefix(token, "Token ")) {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"error": "Missing Authorization header",
 			})
 		}
-
 		if strings.HasPrefix(token, "Token ") {
 			tokenStr := strings.TrimPrefix(token, "Token ")
 			decodedData, err := utils.DecodeBase64(tokenStr)
@@ -121,16 +107,13 @@ func main() {
 					"error": "Invalid token: " + tokenStr,
 				})
 			}
-
 			parts := strings.Split(decodedData, ".")
 			if len(parts) < 4 {
 				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 					"error": "Malformed token: " + tokenStr,
 				})
 			}
-
 			key, _, _, _ := parts[0], parts[1], parts[2], parts[3]
-
 			valid, err := utils.ValidateAuth(fmt.Sprint(time.Now().UnixNano()/int64(time.Millisecond)), key)
 			if err != nil || !*valid {
 				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
@@ -146,10 +129,8 @@ func main() {
 				})
 			}
 		}
-
 		return c.Next()
 	})
-
 	// Universal error handling middleware
 	app.Use(func(c *fiber.Ctx) error {
 		err := c.Next()
@@ -160,7 +141,6 @@ func main() {
 		}
 		return nil
 	})
-
 	cacheConfig := cache.Config{
 		Next: func(c *fiber.Ctx) bool {
 			return c.Method() != "GET"
@@ -170,7 +150,6 @@ func main() {
 			return c.Path() + "_" + c.Get("X-CSRF-Token")
 		},
 	}
-
 	api := app.Group("/", func(c *fiber.Ctx) error {
 		switch c.Path() {
 		case "/login", "/hello":
@@ -184,41 +163,33 @@ func main() {
 		}
 		return c.Next()
 	})
-
 	// Routes -----------------------------------------
-
 	app.Get("/hello", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "Hello, World!"})
 	})
-
 	app.Post("/login", func(c *fiber.Ctx) error {
 		var creds struct {
 			Username string `json:"account"`
 			Password string `json:"password"`
 		}
-
 		if err := c.BodyParser(&creds); err != nil {
 			log.Printf("Error parsing body: %v", err)
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"error": "Invalid JSON body",
 			})
 		}
-
 		if creds.Username == "" || creds.Password == "" {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"error": "Missing account or password",
 			})
 		}
-
 		lf := &handlers.LoginFetcher{}
 		session, err := lf.Login(creds.Username, creds.Password)
 		if err != nil {
 			return err
 		}
-
 		return c.JSON(session)
 	})
-
 	api.Delete("/logout", func(c *fiber.Ctx) error {
 		lf := &handlers.LoginFetcher{}
 		session, err := lf.Logout(c.Get("X-CSRF-Token"))
@@ -227,7 +198,6 @@ func main() {
 		}
 		return c.JSON(session)
 	})
-
 	api.Get("/attendance", cache.New(cacheConfig), func(c *fiber.Ctx) error {
 		attendance, err := handlers.GetAttendance(c.Get("X-CSRF-Token"))
 		if err != nil {
@@ -235,7 +205,6 @@ func main() {
 		}
 		return c.JSON(attendance)
 	})
-
 	api.Get("/marks", cache.New(cacheConfig), func(c *fiber.Ctx) error {
 		marks, err := handlers.GetMarks(c.Get("X-CSRF-Token"))
 		if err != nil {
@@ -243,7 +212,6 @@ func main() {
 		}
 		return c.JSON(marks)
 	})
-
 	api.Get("/courses", cache.New(cacheConfig), func(c *fiber.Ctx) error {
 		courses, err := handlers.GetCourses(c.Get("X-CSRF-Token"))
 		if err != nil {
@@ -251,7 +219,6 @@ func main() {
 		}
 		return c.JSON(courses)
 	})
-
 	api.Get("/user", cache.New(cacheConfig), func(c *fiber.Ctx) error {
 		user, err := handlers.GetUser(c.Get("X-CSRF-Token"))
 		if err != nil {
@@ -259,38 +226,41 @@ func main() {
 		}
 		return c.JSON(user)
 	})
-
 	api.Get("/calendar", cache.New(cacheConfig), func(c *fiber.Ctx) error {
+		token := c.Get("X-CSRF-Token")
+		month := c.QueryInt("month", 0) // Extract month from query parameter, default to 0
+		log.Printf("DEBUG: Calendar route triggered - Token length: %d, Month: %d", len(token), month) // Debug log
 		db, err := databases.NewCalDBHelper()
 		if err != nil {
+			log.Printf("DEBUG: Error creating CalDBHelper: %v", err)
 			return err
 		}
-
 		dbcal, err := db.GetEvents()
 		if err != nil {
+			log.Printf("DEBUG: Error getting events from DB: %v", err)
 			return err
 		}
-
 		if len(dbcal.Calendar) == 0 {
-			cal, err := handlers.GetCalendar(c.Get("X-CSRF-Token"))
+			log.Printf("DEBUG: DB cache empty, fetching fresh calendar for month %d", month)
+			cal, err := handlers.GetCalendar(token, month) // Pass month to GetCalendar
 			if err != nil {
+				log.Printf("DEBUG: Error from GetCalendar: %v", err)
 				return err
 			}
 			go func() {
 				for _, event := range cal.Calendar {
-					for _, month := range event.Days {
+					for _, day := range event.Days {
 						err = db.SetEvent(databases.CalendarEvent{
 							ID:        utils.GenerateID(),
-							Date:      month.Date,
+							Date:      day.Date,
 							Month:     event.Month,
-							Day:       month.Day,
-							Order:     month.DayOrder,
-							Event:     month.Event,
+							Day:       day.Day,
+							Order:     day.DayOrder,
+							Event:     day.Event,
 							CreatedAt: time.Now().UnixNano() / int64(time.Millisecond),
 						})
-
 						if err != nil {
-							log.Printf("Error setting calendar event: %v", err)
+							log.Printf("DEBUG: Error setting calendar event: %v", err)
 							return
 						}
 					}
@@ -298,11 +268,9 @@ func main() {
 			}()
 			return c.JSON(cal)
 		}
-
+		log.Printf("DEBUG: Returning cached calendar with %d months", len(dbcal.Calendar))
 		return c.JSON(dbcal)
-
 	})
-
 	api.Get("/timetable", cache.New(cacheConfig), func(c *fiber.Ctx) error {
 		tt, err := handlers.GetTimetable(c.Get("X-CSRF-Token"))
 		if err != nil {
@@ -310,30 +278,24 @@ func main() {
 		}
 		return c.JSON(tt)
 	})
-
 	api.Get("/get", cache.New(cacheConfig), func(c *fiber.Ctx) error {
 		token := c.Get("X-CSRF-Token")
 		encodedToken := utils.Encode(token)
-
 		db, err := databases.NewDatabaseHelper()
 		if err != nil {
 			return err
 		}
-
 		cachedData, err := db.FindByToken("goscrape", encodedToken)
-
 		// Check if cached data exists and all required fields are present and non-empty
 		if len(cachedData) != 0 &&
 			cachedData["timetable"] != nil &&
 			cachedData["attendance"] != nil &&
 			cachedData["marks"] != nil {
-
 			// Always fetch ophour from db and add to cachedData
 			ophour, err := db.GetOphourByToken(encodedToken)
 			if err == nil && ophour != "" {
 				cachedData["ophour"] = ophour
 			}
-
 			go func() {
 				data, err := fetchAllData(token)
 				if err != nil {
@@ -344,32 +306,24 @@ func main() {
 					db.UpsertData("goscrape", data)
 				}
 			}()
-
 			return c.JSON(cachedData)
 		}
-
 		data, err := fetchAllData(token)
 		if err != nil {
 			return utils.HandleError(c, err)
 		}
-
 		data["token"] = encodedToken
-
 		js, _ := json.Marshal(data)
-
 		go func() {
 			err = db.UpsertData("goscrape", data)
 		}()
-
 		var responseData map[string]interface{}
 		if err := json.Unmarshal(js, &responseData); err != nil {
 			return err
 		}
 		return c.JSON(responseData)
 	})
-
 	// ----------------------------------------------------
-
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -391,9 +345,7 @@ func fetchAllData(token string) (map[string]interface{}, error) {
 		data interface{}
 		err  error
 	}
-
 	resultChan := make(chan result, 5)
-
 	go func() {
 		data, err := handlers.GetUser(token)
 		resultChan <- result{"user", data, err}
@@ -414,7 +366,6 @@ func fetchAllData(token string) (map[string]interface{}, error) {
 		data, err := handlers.GetTimetable(token)
 		resultChan <- result{"timetable", data, err}
 	}()
-
 	data := make(map[string]interface{})
 	for i := 0; i < 5; i++ {
 		r := <-resultChan
@@ -423,11 +374,9 @@ func fetchAllData(token string) (map[string]interface{}, error) {
 		}
 		data[r.key] = r.data
 	}
-
 	if user, ok := data["user"].(*types.User); ok {
 		data["regNumber"] = user.RegNumber
 	}
-
 	// Fetch ophour from database
 	db, err := databases.NewDatabaseHelper()
 	if err == nil {
@@ -437,6 +386,5 @@ func fetchAllData(token string) (map[string]interface{}, error) {
 			data["ophour"] = ophour
 		}
 	}
-
 	return data, nil
 }
