@@ -2,6 +2,7 @@ package helpers
 
 import (
 	"fmt"
+	"log"
 	"goscraper/src/types"
 	"goscraper/src/utils"
 	"strconv"
@@ -15,7 +16,7 @@ import (
 func init() {
 	// Load .env file from the project root
 	// if err := godotenv.Load(); err != nil {
-	// 	fmt.Printf("Warning: .env file not found: %v\n", err)
+	// 	log.Printf("Warning: .env file not found: %v\n", err)
 	// }
 }
 
@@ -76,113 +77,113 @@ func (c *CalendarFetcher) GetCalendar() (*types.CalendarResponse, error) {
 }
 
 func (c *CalendarFetcher) parseCalendar(html string) (*types.CalendarResponse, error) {
-    var htmlText string
-    if strings.Contains(html, "<table bgcolor=") {
-        htmlText = html
-    } else {
-        parts := strings.Split(html, "zmlvalue=\"")
-        if len(parts) < 2 {
-            return nil, fmt.Errorf("invalid HTML format")
-        }
-        decodedHTML := utils.ConvertHexToHTML(strings.Split(parts[1], "\" > </div> </div>")[0])
-        htmlText = utils.DecodeHTMLEntities(decodedHTML)
-    }
-    doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlText))
-    if err != nil {
-        return nil, err
-    }
+	var htmlText string
+	if strings.Contains(html, "<table bgcolor=") {
+		htmlText = html
+	} else {
+		parts := strings.Split(html, "zmlvalue=\"")
+		if len(parts) < 2 {
+			return nil, fmt.Errorf("invalid HTML format")
+		}
+		decodedHTML := utils.ConvertHexToHTML(strings.Split(parts[1], "\" > </div> </div>")[0])
+		htmlText = utils.DecodeHTMLEntities(decodedHTML)
+	}
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlText))
+	if err != nil {
+		return nil, err
+	}
 
-    var monthHeaders []string
-    doc.Find("th").Each(func(_ int, s *goquery.Selection) {
-        month := strings.TrimSpace(s.Text())
-        if strings.Contains(month, "'2") {
-            monthHeaders = append(monthHeaders, month)
-        }
-    })
-    data := make([]types.CalendarMonth, len(monthHeaders))
-    for i := range monthHeaders {
-        data[i].Month = monthHeaders[i]
-        data[i].Days = make([]types.Day, 0)
-    }
+	var monthHeaders []string
+	doc.Find("th").Each(func(_ int, s *goquery.Selection) {
+		month := strings.TrimSpace(s.Text())
+		if strings.Contains(month, "'2") {
+			monthHeaders = append(monthHeaders, month)
+		}
+	})
+	data := make([]types.CalendarMonth, len(monthHeaders))
+	for i := range monthHeaders {
+		data[i].Month = monthHeaders[i]
+		data[i].Days = make([]types.Day, 0)
+	}
 
-    // Debug: Log all table rows and columns
-    doc.Find("table tr").Each(func(rowIdx int, row *goquery.Selection) {
-        tds := row.Find("td")
-        fmt.Printf("Row %d: Total TDs: %d\n", rowIdx, tds.Length())
-        tds.Each(func(tdIdx int, td *goquery.Selection) {
-            fmt.Printf("  TD %d: %q\n", tdIdx, strings.TrimSpace(td.Text()))
-        })
-    })
+	// Debug: Log all table rows and columns to server logs
+	doc.Find("table tr").Each(func(rowIdx int, row *goquery.Selection) {
+		tds := row.Find("td")
+		log.Printf("DEBUG: Row %d: Total TDs: %d\n", rowIdx, tds.Length())
+		tds.Each(func(tdIdx int, td *goquery.Selection) {
+			log.Printf("DEBUG:   TD %d: %q\n", tdIdx, strings.TrimSpace(td.Text()))
+		})
+	})
 
-    doc.Find("table tr").Each(func(_ int, row *goquery.Selection) {
-        tds := row.Find("td")
-        for i := range monthHeaders {
-            pad := i * 4 // Base padding for 4 columns per month
-            if tds.Length() <= pad+3 { // Ensure enough columns
-                continue
-            }
-            // Extract raw texts for debugging
-            dateText := strings.TrimSpace(tds.Eq(pad).Text())
-            dayText := strings.TrimSpace(tds.Eq(pad + 1).Text())
-            eventText := strings.TrimSpace(tds.Eq(pad + 2).Text())
-            dayOrderText := strings.TrimSpace(tds.Eq(pad + 3).Text())
-            fmt.Printf("Month %s (Pad %d): Date=%q, Day=%q, Event=%q, DayOrder=%q\n", monthHeaders[i], pad, dateText, dayText, eventText, dayOrderText)
+	doc.Find("table tr").Each(func(_ int, row *goquery.Selection) {
+		tds := row.Find("td")
+		for i := range monthHeaders {
+			pad := i * 4 // Base padding for 4 columns per month
+			if tds.Length() <= pad+3 { // Ensure enough columns
+				continue
+			}
+			// Extract raw texts for debugging
+			dateText := strings.TrimSpace(tds.Eq(pad).Text())
+			dayText := strings.TrimSpace(tds.Eq(pad + 1).Text())
+			eventText := strings.TrimSpace(tds.Eq(pad + 2).Text())
+			dayOrderText := strings.TrimSpace(tds.Eq(pad + 3).Text())
+			log.Printf("DEBUG: Month %s (Pad %d): Date=%q, Day=%q, Event=%q, DayOrder=%q\n", monthHeaders[i], pad, dateText, dayText, eventText, dayOrderText)
 
-            date := dateText
-            day := dayText
-            event := eventText
-            dayOrder := strings.TrimSpace(strings.Trim(dayOrderText, " -"))
-            if date != "" && dayOrder != "" {
-                data[i].Days = append(data[i].Days, types.Day{
-                    Date:    date,
-                    Day:     day,
-                    Event:   event,
-                    DayOrder: dayOrder,
-                })
-            }
-        }
-    })
+			date := dateText
+			day := dayText
+			event := eventText
+			dayOrder := strings.TrimSpace(strings.Trim(dayOrderText, " -"))
+			if date != "" && dayOrder != "" {
+				data[i].Days = append(data[i].Days, types.Day{
+					Date:    date,
+					Day:     day,
+					Event:   event,
+					DayOrder: dayOrder,
+				})
+			}
+		}
+	})
 
-    // Sort the calendar data
-    sortedData := SortCalendarData(data)
+	// Sort the calendar data
+	sortedData := SortCalendarData(data)
 
-    // Find current month entry
-    monthNames := []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
-    currentMonthName := monthNames[c.date.Month()-1]
-    var monthEntry types.CalendarMonth
-    var monthIndex int
-    for i, entry := range sortedData {
-        if strings.Contains(entry.Month, currentMonthName) {
-            monthEntry = entry
-            monthIndex = i
-            break
-        }
-    }
-    if monthEntry.Month == "" {
-        monthEntry = sortedData[0]
-        monthIndex = 0
-    }
+	// Find current month entry
+	monthNames := []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
+	currentMonthName := monthNames[c.date.Month()-1]
+	var monthEntry types.CalendarMonth
+	var monthIndex int
+	for i, entry := range sortedData {
+		if strings.Contains(entry.Month, currentMonthName) {
+			monthEntry = entry
+			monthIndex = i
+			break
+		}
+	}
+	if monthEntry.Month == "" {
+		monthEntry = sortedData[0]
+		monthIndex = 0
+	}
 
-    var today, tomorrow *types.Day
-    if len(monthEntry.Days) > 0 {
-        todayIndex := c.date.Day() - 1
-        if todayIndex >= 0 && todayIndex < len(monthEntry.Days) {
-            today = &monthEntry.Days[todayIndex]
-            tomorrowIndex := todayIndex + 1
-            if tomorrowIndex < len(monthEntry.Days) {
-                tomorrow = &monthEntry.Days[tomorrowIndex]
-            } else if monthIndex+1 < len(sortedData) && len(sortedData[monthIndex+1].Days) > 0 {
-                tomorrow = &sortedData[monthIndex+1].Days[0]
-            }
-        }
-    }
+	var today, tomorrow *types.Day
+	if len(monthEntry.Days) > 0 {
+		todayIndex := c.date.Day() - 1
+		if todayIndex >= 0 && todayIndex < len(monthEntry.Days) {
+			today = &monthEntry.Days[todayIndex]
+			tomorrowIndex := todayIndex + 1
+			if tomorrowIndex < len(monthEntry.Days) {
+				tomorrow = &monthEntry.Days[tomorrowIndex]
+			} else if monthIndex+1 < len(sortedData) && len(sortedData[monthIndex+1].Days) > 0 {
+				tomorrow = &sortedData[monthIndex+1].Days[0]
+			}
+		}
+	}
 
-    return &types.CalendarResponse{
-        Today:    today,
-        Tomorrow: tomorrow,
-        Index:    monthIndex,
-        Calendar: sortedData,
-    }, nil
+	return &types.CalendarResponse{
+		Today:    today,
+		Tomorrow: tomorrow,
+		Index:    monthIndex,
+		Calendar: sortedData,
+	}, nil
 }
 
 func SortCalendarData(data []types.CalendarMonth) []types.CalendarMonth {
