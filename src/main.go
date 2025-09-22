@@ -227,50 +227,59 @@ func main() {
 		return c.JSON(user)
 	})
 	api.Get("/calendar", cache.New(cacheConfig), func(c *fiber.Ctx) error {
-		token := c.Get("X-CSRF-Token")
-		month := c.QueryInt("month", 0) // Extract month from query parameter, default to 0
-		log.Printf("DEBUG: Calendar route triggered - Token length: %d, Month: %d", len(token), month) // Debug log
-		db, err := databases.NewCalDBHelper()
-		if err != nil {
-			log.Printf("DEBUG: Error creating CalDBHelper: %v", err)
-			return err
-		}
-		dbcal, err := db.GetEvents()
-		if err != nil {
-			log.Printf("DEBUG: Error getting events from DB: %v", err)
-			return err
-		}
-		if len(dbcal.Calendar) == 0 {
-			log.Printf("DEBUG: DB cache empty, fetching fresh calendar for month %d", month)
-			cal, err := handlers.GetCalendar(token, month) // Pass month to GetCalendar
-			if err != nil {
-				log.Printf("DEBUG: Error from GetCalendar: %v", err)
-				return err
-			}
-			go func() {
-				for _, event := range cal.Calendar {
-					for _, day := range event.Days {
-						err = db.SetEvent(databases.CalendarEvent{
-							ID:        utils.GenerateID(),
-							Date:      day.Date,
-							Month:     event.Month,
-							Day:       day.Day,
-							Order:     day.DayOrder,
-							Event:     day.Event,
-							CreatedAt: time.Now().UnixNano() / int64(time.Millisecond),
-						})
-						if err != nil {
-							log.Printf("DEBUG: Error setting calendar event: %v", err)
-							return
-						}
-					}
-				}
-			}()
-			return c.JSON(cal)
-		}
-		log.Printf("DEBUG: Returning cached calendar with %d months", len(dbcal.Calendar))
-		return c.JSON(dbcal)
-	})
+    token := c.Get("X-CSRF-Token")
+    month := c.QueryInt("month", 0)
+    log.Printf("DEBUG: Calendar route triggered - Token length: %d, Month: %d", len(token), month)
+    db, err := databases.NewCalDBHelper()
+    if err != nil {
+        log.Printf("DEBUG: Error creating CalDBHelper: %v", err)
+        return err
+    }
+    // Force fresh fetch by clearing cache or ignoring it for testing
+    dbcal, err := db.GetEvents()
+    if err != nil {
+        log.Printf("DEBUG: Error getting events from DB: %v", err)
+        return err
+    }
+    log.Printf("DEBUG: DB cache has %d months", len(dbcal.Calendar))
+    // Uncomment the next line to clear cache for testing
+    // db.ClearEvents() // Add this method if available in databases package
+    if len(dbcal.Calendar) > 0 {
+        log.Printf("DEBUG: Forcing fresh fetch for month %d", month)
+        // Simulate empty cache
+        dbcal.Calendar = nil
+    }
+    if len(dbcal.Calendar) == 0 {
+        log.Printf("DEBUG: DB cache empty, fetching fresh calendar for month %d", month)
+        cal, err := handlers.GetCalendar(token, month)
+        if err != nil {
+            log.Printf("DEBUG: Error from GetCalendar: %v", err)
+            return err
+        }
+        go func() {
+            for _, event := range cal.Calendar {
+                for _, day := range event.Days {
+                    err = db.SetEvent(databases.CalendarEvent{
+                        ID:        utils.GenerateID(),
+                        Date:      day.Date,
+                        Month:     event.Month,
+                        Day:       day.Day,
+                        Order:     day.DayOrder,
+                        Event:     day.Event,
+                        CreatedAt: time.Now().UnixNano() / int64(time.Millisecond),
+                    })
+                    if err != nil {
+                        log.Printf("DEBUG: Error setting calendar event: %v", err)
+                        return
+                    }
+                }
+            }
+        }()
+        return c.JSON(cal)
+    }
+    log.Printf("DEBUG: Returning cached calendar with %d months", len(dbcal.Calendar))
+    return c.JSON(dbcal)
+})
 	api.Get("/timetable", cache.New(cacheConfig), func(c *fiber.Ctx) error {
 		tt, err := handlers.GetTimetable(c.Get("X-CSRF-Token"))
 		if err != nil {
