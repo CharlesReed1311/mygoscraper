@@ -90,6 +90,7 @@ func (c *CalendarFetcher) parseCalendar(html string) (*types.CalendarResponse, e
 	}
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlText))
 	if err != nil {
+		log.Printf("DEBUG: Error parsing HTML: %v", err)
 		return nil, err
 	}
 
@@ -109,17 +110,17 @@ func (c *CalendarFetcher) parseCalendar(html string) (*types.CalendarResponse, e
 	// Debug: Log all table rows and columns to server logs
 	doc.Find("table tr").Each(func(rowIdx int, row *goquery.Selection) {
 		tds := row.Find("td")
-		log.Printf("DEBUG: Row %d: Total TDs: %d\n", rowIdx, tds.Length())
+		log.Printf("DEBUG: Row %d: Total TDs: %d", rowIdx, tds.Length())
 		tds.Each(func(tdIdx int, td *goquery.Selection) {
-			log.Printf("DEBUG:   TD %d: %q\n", tdIdx, strings.TrimSpace(td.Text()))
+			log.Printf("DEBUG:   TD %d: %q", tdIdx, strings.TrimSpace(td.Text()))
 		})
 	})
 
 	doc.Find("table tr").Each(func(_ int, row *goquery.Selection) {
 		tds := row.Find("td")
 		for i := range monthHeaders {
-			pad := i * 4 // Base padding for 4 columns per month
-			if tds.Length() <= pad+3 { // Ensure enough columns
+			pad := i * 5 // Fixed to 5 columns per month based on log analysis
+			if tds.Length() <= pad+4 { // Ensure enough columns (5 total: Date, Day, Event, DayOrder, extra)
 				continue
 			}
 			// Extract raw texts for debugging
@@ -127,13 +128,15 @@ func (c *CalendarFetcher) parseCalendar(html string) (*types.CalendarResponse, e
 			dayText := strings.TrimSpace(tds.Eq(pad + 1).Text())
 			eventText := strings.TrimSpace(tds.Eq(pad + 2).Text())
 			dayOrderText := strings.TrimSpace(tds.Eq(pad + 3).Text())
-			log.Printf("DEBUG: Month %s (Pad %d): Date=%q, Day=%q, Event=%q, DayOrder=%q\n", monthHeaders[i], pad, dateText, dayText, eventText, dayOrderText)
+			extraText := strings.TrimSpace(tds.Eq(pad + 4).Text()) // The extra column causing shift
+			log.Printf("DEBUG: Month %s (Pad %d): Date=%q, Day=%q, Event=%q, DayOrder=%q, Extra=%q", monthHeaders[i], pad, dateText, dayText, eventText, dayOrderText, extraText)
 
 			date := dateText
 			day := dayText
 			event := eventText
 			dayOrder := strings.TrimSpace(strings.Trim(dayOrderText, " -"))
-			if date != "" && dayOrder != "" {
+			// Only add if date is numeric and non-empty, and dayOrder is valid
+			if date != "" && strings.TrimSpace(date) != "-" && dayOrder != "" && dayOrder != "-" {
 				data[i].Days = append(data[i].Days, types.Day{
 					Date:    date,
 					Day:     day,
@@ -169,10 +172,12 @@ func (c *CalendarFetcher) parseCalendar(html string) (*types.CalendarResponse, e
 		todayIndex := c.date.Day() - 1
 		if todayIndex >= 0 && todayIndex < len(monthEntry.Days) {
 			today = &monthEntry.Days[todayIndex]
+			// Get tomorrow's date
 			tomorrowIndex := todayIndex + 1
 			if tomorrowIndex < len(monthEntry.Days) {
 				tomorrow = &monthEntry.Days[tomorrowIndex]
 			} else if monthIndex+1 < len(sortedData) && len(sortedData[monthIndex+1].Days) > 0 {
+				// If tomorrow is in the next month
 				tomorrow = &sortedData[monthIndex+1].Days[0]
 			}
 		}
