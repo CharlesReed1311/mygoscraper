@@ -119,28 +119,23 @@ func (c *CalendarFetcher) parseCalendar(html string) (*types.CalendarResponse, e
 	doc.Find("table tr").Each(func(_ int, row *goquery.Selection) {
 		tds := row.Find("td")
 		for i := range monthHeaders {
-			pad := i * 5 // Fixed to 5 columns per month based on log analysis
-			if tds.Length() <= pad+4 { // Ensure enough columns (5 total: Date, Day, Event, DayOrder, extra)
+			pad := i * 5 // 5 columns per month: Date, Day, Event, DayOrder, extra
+			if tds.Length() <= pad+4 { // Ensure enough columns
 				continue
 			}
-			// Extract raw texts for debugging
 			dateText := strings.TrimSpace(tds.Eq(pad).Text())
 			dayText := strings.TrimSpace(tds.Eq(pad + 1).Text())
 			eventText := strings.TrimSpace(tds.Eq(pad + 2).Text())
 			dayOrderText := strings.TrimSpace(tds.Eq(pad + 3).Text())
-			extraText := strings.TrimSpace(tds.Eq(pad + 4).Text()) // The extra column causing shift
+			extraText := strings.TrimSpace(tds.Eq(pad + 4).Text())
 			log.Printf("DEBUG: Month %s (Pad %d): Date=%q, Day=%q, Event=%q, DayOrder=%q, Extra=%q", monthHeaders[i], pad, dateText, dayText, eventText, dayOrderText, extraText)
 
-			date := dateText
-			day := dayText
-			event := eventText
-			dayOrder := strings.TrimSpace(strings.Trim(dayOrderText, " -"))
-			// Only add if date is numeric and non-empty, and dayOrder is valid
-			if date != "" && strings.TrimSpace(date) != "-" && dayOrder != "" && dayOrder != "-" {
+			if dateText != "" { // Only require non-empty date to proceed
+				dayOrder := strings.TrimSpace(strings.Trim(dayOrderText, " -"))
 				data[i].Days = append(data[i].Days, types.Day{
-					Date:    date,
-					Day:     day,
-					Event:   event,
+					Date:    dateText,
+					Day:     dayText,
+					Event:   eventText, // Preserve holiday events
 					DayOrder: dayOrder,
 				})
 			}
