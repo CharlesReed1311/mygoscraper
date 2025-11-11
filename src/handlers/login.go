@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-
+	"time"
 	"github.com/valyala/fasthttp"
 )
 
@@ -32,8 +32,14 @@ type LoginResponse struct {
 	Lookup        any                    `json:"lookup"`
 	Cookies       string                 `json:"cookies"`
 	Status        int                    `json:"status"`
-	Message       any                 `json:"message"`
+	Message       any                    `json:"message"`
 	Errors        []string               `json:"errors"`
+	Captcha       *CaptchaData           `json:"captcha,omitempty"`
+}
+
+type CaptchaData struct {
+	Image   string `json:"image"`   // base64 encoded image
+	Cdigest string `json:"cdigest"`  // captcha digest
 }
 
 func (lf *LoginFetcher) Logout(token string) (map[string]interface{}, error) {
@@ -68,7 +74,52 @@ func (lf *LoginFetcher) Logout(token string) (map[string]interface{}, error) {
 	return result, nil
 }
 
-func (lf *LoginFetcher) Login(username, password string) (*LoginResponse, error) {
+func (lf *LoginFetcher) FetchCaptcha(cdigest string) (string, error) {
+	url := fmt.Sprintf("https://academia.srmist.edu.in/accounts/p/40-10002227248/webclient/v1/captcha/%s?darkmode=false", cdigest)
+
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+
+	resp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(resp)
+
+	req.SetRequestURI(url)
+	req.Header.SetMethod("GET")
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Connection", "keep-alive")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
+	req.Header.Set("Referer", "https://academia.srmist.edu.in/accounts/p/10002227248/signin?hide_fp=true&orgtype=40&service_language=en&css_url=/49910842/academia-academic-services/downloadPortalCustomCss/login&dcc=true&serviceurl=https%3A%2F%2Facademia.srmist.edu.in%2Fportal%2Facademia-academic-services%2FredirectFromLogin")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36")
+	req.Header.Set("cookie", "zalb_74c3a1eecc=18c2ae8cabb778c688e1dd5418e4505b; zalb_f0e8db9d3d=983d6a65b2f29022f18db52385bfc639; stk=843bc5ebcebcef8b08d349f27b55842b; zalb_3309580ed5=151b34e5142175e5024c18055cece0f8; CT_CSRF_TOKEN=d933d841-b40b-427e-bfd7-83dbb4176ba1; iamcsr=5547d81f41ddb2cd9e1df2bb815dacff32f0a605d0a439b94d267d51108d513b0c6557e76ceb08be4882a41d82141e0c17818610f5c4ab1884dd57e79c880c83; zccpn=290cd2fceee5e981c5d075053108921c56c050db75563e543b8ecd4ae1487e06952e133e0e6098a1dbf16fad3c563f68994dc871cb4c5c648af78620df74ad2e; _zcsr_tmp=290cd2fceee5e981c5d075053108921c56c050db75563e543b8ecd4ae1487e06952e133e0e6098a1dbf16fad3c563f68994dc871cb4c5c648af78620df74ad2e; cli_rgn=IN; JSESSIONID=79DACADBAAD213B7B4739C09F9D3F247")
+
+	if err := fasthttp.Do(req, resp); err != nil {
+		return "", fmt.Errorf("captcha request failed: %v", err)
+	}
+
+	if resp.StatusCode() != 200 {
+		return "", fmt.Errorf("captcha HTTP error: %d", resp.StatusCode())
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(resp.Body(), &parsed); err != nil {
+		return "", fmt.Errorf("failed to parse captcha JSON: %v", err)
+	}
+
+	captcha, ok := parsed["captcha"].(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("invalid captcha format: missing 'captcha' field")
+	}
+
+	imageBytes, ok := captcha["image_bytes"].(string)
+	if !ok || imageBytes == "" {
+		return "", fmt.Errorf("invalid captcha format: missing 'image_bytes'")
+	}
+
+	return imageBytes, nil
+}
+
+func (lf *LoginFetcher) Login(username, password string, cdigest, captcha *string) (*LoginResponse, error) {
 	user := strings.Replace(username, "@srmist.edu.in", "", 1)
 
 	url := fmt.Sprintf("https://academia.srmist.edu.in/accounts/p/40-10002227248/signin/v2/lookup/%s@srmist.edu.in", user)
@@ -76,22 +127,29 @@ func (lf *LoginFetcher) Login(username, password string) (*LoginResponse, error)
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
 
+	cli_time := time.Now().UnixMilli()
+
 	req.SetRequestURI(url)
 	req.Header.SetMethod("POST")
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Connection", "keep-alive")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
-	req.Header.Set("sec-ch-ua", "\"Not(A:Brand\";v=\"99\", \"Google Chrome\";v=\"133\", \"Chromium\";v=\"133\"")
-	req.Header.Set("sec-ch-ua-mobile", "?0")
-	req.Header.Set("sec-ch-ua-platform", "\"macOS\"")
-	req.Header.Set("sec-fetch-dest", "empty")
-	req.Header.Set("sec-fetch-mode", "cors")
-	req.Header.Set("sec-fetch-site", "same-origin")
-	req.Header.Set("x-zcsrf-token", "iamcsrcoo=3c59613cb190a67effa5b17eaba832ef1eddaabeb7610c8c6a518b753bc73848b483b007a63f24d94d67d14dda0eca9f0c69e027c0ebd1bb395e51b2c6291d63")
-	req.Header.Set("cookie", "npfwg=1; npf_r=; npf_l=www.srmist.edu.in; npf_u=https://www.srmist.edu.in/faculty/dr-g-y-rajaa-vikhram/; zalb_74c3a1eecc=44130d4069ebce16724b1740d9128cae; ZCNEWUIPUBLICPORTAL=true; zalb_f0e8db9d3d=93b1234ae1d3e88e54aa74d5fbaba677; stk=efbb3889860a8a5d4a9ad34903359b4e; zccpn=3c59613cb190a67effa5b17eaba832ef1eddaabeb7610c8c6a518b753bc73848b483b007a63f24d94d67d14dda0eca9f0c69e027c0ebd1bb395e51b2c6291d63; zalb_3309580ed5=2f3ce51134775cd955d0a3f00a177578; CT_CSRF_TOKEN=9d0ab1e6-9f71-40fd-826e-7229d199b64d; iamcsr=3c59613cb190a67effa5b17eaba832ef1eddaabeb7610c8c6a518b753bc73848b483b007a63f24d94d67d14dda0eca9f0c69e027c0ebd1bb395e51b2c6291d63; _zcsr_tmp=3c59613cb190a67effa5b17eaba832ef1eddaabeb7610c8c6a518b753bc73848b483b007a63f24d94d67d14dda0eca9f0c69e027c0ebd1bb395e51b2c6291d63; npf_fx=1; _ga_QNCRQG0GFE=GS1.1.1737645192.5.0.1737645194.58.0.0; TS014f04d9=0190f757c98d895868ec35d391f7090a39080dd8e7be840ed996d7e2827e600c5b646207bb76666e56e22bfaf8d2c06ec3c913fe80; cli_rgn=IN; JSESSIONID=E78E4C7013F0D931BD251EBA136D57AE; _ga=GA1.3.1900970259.1737341486; _gid=GA1.3.1348593805.1737687406; _gat=1; _ga_HQWPLLNMKY=GS1.3.1737687405.1.0.1737687405.0.0.0")
-	req.Header.Set("Referer", "https://academia.srmist.edu.in/accounts/p/10002227248/signin?hide_fp=true&servicename=ZohoCreator&service_language=en&css_url=/49910842/academia-academic-services/downloadPortalCustomCss/login&dcc=true&serviceurl=https%3A%2F%2Facademia.srmist.edu.in%2Fportal%2Facademia-academic-services%2FredirectFromLogin")
-	req.Header.Set("Referrer-Policy", "strict-origin-when-cross-origin")
-	req.SetBody([]byte("mode=primary&cli_time=1737687406853&servicename=ZohoCreator&service_language=en&serviceurl=https%3A%2F%2Facademia.srmist.edu.in%2Fportal%2Facademia-academic-services%2FredirectFromLogin"))
+	req.Header.Set("Origin", "https://academia.srmist.edu.in")
+	req.Header.Set("Referer", "https://academia.srmist.edu.in/accounts/p/10002227248/signin?hide_fp=true&orgtype=40&service_language=en&css_url=/49910842/academia-academic-services/downloadPortalCustomCss/login&dcc=true&serviceurl=https%3A%2F%2Facademia.srmist.edu.in%2Fportal%2Facademia-academic-services%2FredirectFromLogin")
+	req.Header.Set("Sec-Fetch-Mode", "cors")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36")
+	req.Header.Set("X-ZCSRF-TOKEN", "iamcsrcoo=5547d81f41ddb2cd9e1df2bb815dacff32f0a605d0a439b94d267d51108d513b0c6557e76ceb08be4882a41d82141e0c17818610f5c4ab1884dd57e79c880c83")
+	req.Header.Set("cookie", "zalb_74c3a1eecc=18c2ae8cabb778c688e1dd5418e4505b; zalb_f0e8db9d3d=983d6a65b2f29022f18db52385bfc639; stk=843bc5ebcebcef8b08d349f27b55842b; zalb_3309580ed5=151b34e5142175e5024c18055cece0f8; CT_CSRF_TOKEN=d933d841-b40b-427e-bfd7-83dbb4176ba1; iamcsr=5547d81f41ddb2cd9e1df2bb815dacff32f0a605d0a439b94d267d51108d513b0c6557e76ceb08be4882a41d82141e0c17818610f5c4ab1884dd57e79c880c83; zccpn=290cd2fceee5e981c5d075053108921c56c050db75563e543b8ecd4ae1487e06952e133e0e6098a1dbf16fad3c563f68994dc871cb4c5c648af78620df74ad2e; _zcsr_tmp=290cd2fceee5e981c5d075053108921c56c050db75563e543b8ecd4ae1487e06952e133e0e6098a1dbf16fad3c563f68994dc871cb4c5c648af78620df74ad2e; cli_rgn=IN; JSESSIONID=79DACADBAAD213B7B4739C09F9D3F247")
+
+	body := fmt.Sprintf("mode=primary&cli_time=%d&orgtype=40&service_language=en&serviceurl=https%3A%2F%2Facademia.srmist.edu.in%2Fportal%2Facademia-academic-services%2FredirectFromLogin", cli_time)
+	
+	// Add captcha and cdigest if provided
+	if cdigest != nil && captcha != nil {
+		body += fmt.Sprintf("&captcha=%s&cdigest=%s", *captcha, *cdigest)
+	}
+	
+	req.SetBody([]byte(body))
 
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(resp)
@@ -112,19 +170,65 @@ func (lf *LoginFetcher) Login(username, password string) (*LoginResponse, error)
 		statusCode := int(data["status_code"].(float64))
 
 		if statusCode == 400 {
+			// Check if CAPTCHA is required
+			if strings.Contains(data["message"].(string), "HIP") || strings.Contains(lookupMsg, "HIP") {
+				cdigestVal, hasCdigest := data["cdigest"]
+				if hasCdigest {
+					cdigestStr, ok := cdigestVal.(string)
+					if ok && cdigestStr != "" {
+						// Fetch CAPTCHA image
+						captchaImage, err := lf.FetchCaptcha(cdigestStr)
+						if err != nil {
+							return &LoginResponse{
+								Authenticated: false,
+								Session:       nil,
+								Lookup:        data,
+								Cookies:       "",
+								Status:        statusCode,
+								Message:       data["localized_message"].(string),
+								Errors:        []string{lookupMsg},
+								Captcha: &CaptchaData{
+									Cdigest: cdigestStr,
+								},
+							}, nil
+						}
+						
+						return &LoginResponse{
+							Authenticated: false,
+							Session:       nil,
+							Lookup:        data,
+							Cookies:       "",
+							Status:        statusCode,
+							Message:       data["localized_message"].(string),
+							Errors:        []string{lookupMsg},
+							Captcha: &CaptchaData{
+								Image:   captchaImage,
+								Cdigest: cdigestStr,
+							},
+						}, nil
+					}
+				}
+				
+				// Return error response with original data
+				return &LoginResponse{
+					Authenticated: false,
+					Session:       nil,
+					Lookup:        data,
+					Cookies:       "",
+					Status:        statusCode,
+					Message:       data["localized_message"].(string),
+					Errors:        []string{lookupMsg},
+				}, nil
+			}
+			
 			return &LoginResponse{
 				Authenticated: false,
 				Session:       nil,
 				Lookup:        nil,
 				Cookies:       "",
 				Status:        statusCode,
-				Message: func() string {
-					if strings.Contains(data["message"].(string), "HIP") {
-						return ">_ Captcha required, We don't support yet"
-					}
-					return data["message"].(string)
-				}(),
-				Errors: []string{lookupMsg},
+				Message:       data["message"].(string),
+				Errors:        []string{lookupMsg},
 			}, nil
 		}
 	}
@@ -132,19 +236,64 @@ func (lf *LoginFetcher) Login(username, password string) (*LoginResponse, error)
 	exists := strings.Contains(data["message"].(string), "User exists")
 
 	if !exists {
+		// Check if CAPTCHA is required
+		if strings.Contains(data["message"].(string), "HIP") {
+			cdigestVal, hasCdigest := data["cdigest"]
+			if hasCdigest {
+				cdigestStr, ok := cdigestVal.(string)
+				if ok && cdigestStr != "" {
+					// Fetch CAPTCHA image
+					captchaImage, err := lf.FetchCaptcha(cdigestStr)
+					if err != nil {
+						return &LoginResponse{
+							Authenticated: false,
+							Session:       nil,
+							Lookup:        data,
+							Cookies:       "",
+							Status:        int(data["status_code"].(float64)),
+							Message:       data["localized_message"].(string),
+							Errors:        nil,
+							Captcha: &CaptchaData{
+								Cdigest: cdigestStr,
+							},
+						}, nil
+					}
+					
+					return &LoginResponse{
+						Authenticated: false,
+						Session:       nil,
+						Lookup:        data,
+						Cookies:       "",
+						Status:        int(data["status_code"].(float64)),
+						Message:       data["localized_message"].(string),
+						Errors:        nil,
+						Captcha: &CaptchaData{
+							Image:   captchaImage,
+							Cdigest: cdigestStr,
+						},
+					}, nil
+				}
+			}
+			
+			return &LoginResponse{
+				Authenticated: false,
+				Session:       nil,
+				Lookup:        data,
+				Cookies:       "",
+				Status:        int(data["status_code"].(float64)),
+				Message:       data["localized_message"].(string),
+				Errors:        nil,
+			}, nil
+		}
+		
 		return &LoginResponse{
 			Authenticated: false,
 			Session:       nil,
 			Lookup:        nil,
 			Cookies:       "",
 			Status:        int(data["status_code"].(float64)),
-			Message: func() string {
-				if strings.Contains(data["message"].(string), "HIP") {
-					return data["localized_message"].(string)
-				}
-				return data["message"].(string)
-			}(),
-			Errors: nil,
+			Message:       data["message"].(string),
+			Errors:        nil,
 		}, nil
 	}
 
@@ -158,13 +307,38 @@ func (lf *LoginFetcher) Login(username, password string) (*LoginResponse, error)
 		return nil, err
 	}
 
-	sessionBody := map[string]interface{}{
-		"success": true,
-		"code":    session["passwordauth"].(map[string]interface{})["code"],
-		"message": session["message"],
+	// Safely access passwordauth
+	var code interface{}
+	passwordAuthVal, hasPasswordAuth := session["passwordauth"]
+	if hasPasswordAuth && passwordAuthVal != nil {
+		if passwordAuthMap, ok := passwordAuthVal.(map[string]interface{}); ok {
+			code = passwordAuthMap["code"]
+		}
 	}
 
-	if strings.Contains(strings.ToLower(session["message"].(string)), "invalid") || strings.Contains(session["cookies"].(string), "undefined") {
+	// Safely access message
+	var message string
+	if msgVal, ok := session["message"]; ok && msgVal != nil {
+		if msgStr, ok := msgVal.(string); ok {
+			message = msgStr
+		}
+	}
+
+	// Safely access cookies
+	var cookies string
+	if cookiesVal, ok := session["cookies"]; ok && cookiesVal != nil {
+		if cookiesStr, ok := cookiesVal.(string); ok {
+			cookies = cookiesStr
+		}
+	}
+
+	sessionBody := map[string]interface{}{
+		"success": true,
+		"code":    code,
+		"message": message,
+	}
+
+	if strings.Contains(strings.ToLower(message), "invalid") || strings.Contains(cookies, "undefined") {
 		sessionBody["success"] = false
 		return &LoginResponse{
 			Authenticated: false,
@@ -173,9 +347,9 @@ func (lf *LoginFetcher) Login(username, password string) (*LoginResponse, error)
 				"identifier": lookup["identifier"].(string),
 				"digest":     lookup["digest"].(string),
 			},
-			Cookies: session["cookies"].(string),
+			Cookies: cookies,
 			Status:  int(data["status_code"].(float64)),
-			Message: session["message"].(string),
+			Message: message,
 			Errors:  nil,
 		}, nil
 	}
@@ -184,7 +358,7 @@ func (lf *LoginFetcher) Login(username, password string) (*LoginResponse, error)
 		Authenticated: true,
 		Session:       sessionBody,
 		Lookup:        lookup,
-		Cookies:       session["cookies"].(string),
+		Cookies:       cookies,
 		Status:        int(data["status_code"].(float64)),
 		Message:       data["message"],
 		Errors:        nil,
@@ -192,17 +366,38 @@ func (lf *LoginFetcher) Login(username, password string) (*LoginResponse, error)
 }
 
 func (lf *LoginFetcher) GetSession(password string, lookup map[string]interface{}) (map[string]interface{}, error) {
-	identifier := lookup["identifier"].(string)
-	digest := lookup["digest"].(string)
+	identifierVal, ok := lookup["identifier"]
+	if !ok || identifierVal == nil {
+		return nil, fmt.Errorf("missing 'identifier' in lookup map")
+	}
+	digestVal, ok := lookup["digest"]
+	if !ok || digestVal == nil {
+		return nil, fmt.Errorf("missing 'digest' in lookup map")
+	}
+
+	identifier, ok := identifierVal.(string)
+	if !ok {
+		return nil, fmt.Errorf("identifier is not a string: %v", identifierVal)
+	}
+	digest, ok := digestVal.(string)
+	if !ok {
+		return nil, fmt.Errorf("digest is not a string: %v", digestVal)
+	}
+
 	body := fmt.Sprintf(`{"passwordauth":{"password":"%s"}}`, password)
 
 	req := fasthttp.AcquireRequest()
-	defer fasthttp.ReleaseRequest(req)
-
 	resp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseRequest(req)
 	defer fasthttp.ReleaseResponse(resp)
 
-	req.SetRequestURI(fmt.Sprintf("https://academia.srmist.edu.in/accounts/p/40-10002227248/signin/v2/primary/%s/password?digest=%s&cli_time=1713533853845&servicename=ZohoCreator&service_language=en&serviceurl=https://academia.srmist.edu.in/portal/academia-academic-services/redirectFromLogin", identifier, digest))
+	url := fmt.Sprintf(
+		"https://academia.srmist.edu.in/accounts/p/40-10002227248/signin/v2/primary/%s/password?digest=%s&cli_time=1713533853845&servicename=ZohoCreator&service_language=en&serviceurl=https://academia.srmist.edu.in/portal/academia-academic-services/redirectFromLogin",
+		identifier, digest,
+	)
+
+
+	req.SetRequestURI(url)
 	req.Header.SetMethod("POST")
 	req.Header.Set("accept", "*/*")
 	req.Header.Set("content-type", "application/x-www-form-urlencoded;charset=UTF-8")
@@ -214,16 +409,24 @@ func (lf *LoginFetcher) GetSession(password string, lookup map[string]interface{
 		return nil, err
 	}
 
+	status := resp.StatusCode()
+
+	if status >= 400 {
+		return nil, fmt.Errorf("HTTP error: %d", status)
+	}
+
 	var data map[string]interface{}
 	if err := json.Unmarshal(resp.Body(), &data); err != nil {
-		println("SESSIONERR", err)
 		return nil, err
 	}
 
 	cookies := resp.Header.Peek("Set-Cookie")
 	data["cookies"] = string(cookies)
+
 	return data, nil
 }
+
+
 
 func (lf *LoginFetcher) Cleanup(cookie string) (int, error) {
 	req := fasthttp.AcquireRequest()
