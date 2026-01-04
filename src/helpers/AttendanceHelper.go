@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"goscraper/src/types"
 	"goscraper/src/utils"
+	"log"
 	"regexp"
 	"strings"
 
@@ -23,7 +24,6 @@ func NewAcademicsFetch(cookie string) *AcademicsFetch {
 }
 
 func (a *AcademicsFetch) getHTML() (string, error) {
-
 
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
@@ -72,30 +72,50 @@ func (a *AcademicsFetch) GetAttendance() (*types.AttendanceResponse, error) {
 
 	html, err := a.getHTML()
 	if err != nil {
+		log.Printf("AttendanceHelper.GetAttendance: failed to fetch attendance - %v", err)
 		return &types.AttendanceResponse{
-			Status: 500,
-			Error:  err.Error(),
+			Status:     500,
+			Error:      err.Error(),
+			Attendance: []types.Attendance{},
 		}, nil
 	}
 
 	result, err := a.ScrapeAttendance(html)
+	if err != nil {
+		log.Printf("AttendanceHelper.GetAttendance: failed to scrape attendance - %v", err)
+		return &types.AttendanceResponse{
+			Status:     500,
+			Error:      err.Error(),
+			Attendance: []types.Attendance{},
+		}, nil
+	}
 
-	return result, err
+	return result, nil
 }
 
 func (a *AcademicsFetch) GetMarks() (*types.MarksResponse, error) {
 
 	html, err := a.getHTML()
 	if err != nil {
+		log.Printf("AttendanceHelper.GetMarks: failed to fetch marks - %v", err)
 		return &types.MarksResponse{
 			Status: 500,
 			Error:  err.Error(),
-		}, err
+			Marks:  []types.Mark{},
+		}, nil
 	}
 
 	result, err := a.ScrapeMarks(html)
+	if err != nil {
+		log.Printf("AttendanceHelper.GetMarks: failed to scrape marks - %v", err)
+		return &types.MarksResponse{
+			Status: 500,
+			Error:  err.Error(),
+			Marks:  []types.Mark{},
+		}, nil
+	}
 
-	return result, err
+	return result, nil
 }
 
 func (a *AcademicsFetch) ScrapeAttendance(html string) (*types.AttendanceResponse, error) {
@@ -109,7 +129,11 @@ func (a *AcademicsFetch) ScrapeAttendance(html string) (*types.AttendanceRespons
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse HTML: %v", err)
+		log.Printf("AttendanceHelper.ScrapeAttendance: failed to parse HTML - %v", err)
+		return &types.AttendanceResponse{
+			RegNumber:  regNumber,
+			Attendance: []types.Attendance{},
+		}, nil
 	}
 
 	rows := doc.Find("td[bgcolor='#E6E6FA']").FilterFunction(func(i int, s *goquery.Selection) bool {
@@ -164,7 +188,12 @@ func (a *AcademicsFetch) ScrapeMarks(html string) (*types.MarksResponse, error) 
 
 	attResp, err := a.ScrapeAttendance(html)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get attendance for course mapping: %v", err)
+		log.Printf("AttendanceHelper.ScrapeMarks: failed to get attendance for course mapping - %v", err)
+		return &types.MarksResponse{
+			RegNumber: "",
+			Marks:     []types.Mark{},
+			Status:    200,
+		}, nil
 	}
 
 	courseMap := make(map[string]string)

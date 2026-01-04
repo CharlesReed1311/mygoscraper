@@ -4,21 +4,20 @@ import (
 	"fmt"
 	"goscraper/src/types"
 	"goscraper/src/utils"
+	"log"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/valyala/fasthttp"
-    // "github.com/joho/godotenv"
-    // "os"
 )
 
 func init() {
-    // Load .env file from the project root
-    // if err := godotenv.Load(); err != nil {
-    //     fmt.Printf("Warning: .env file not found: %v\n", err)
-    // }
+	// Load .env file from the project root
+	// if err := godotenv.Load(); err != nil {
+	//     fmt.Printf("Warning: .env file not found: %v\n", err)
+	// }
 }
 
 type CalendarFetcher struct {
@@ -40,7 +39,7 @@ func (c *CalendarFetcher) GetCalendar() (*types.CalendarResponse, error) {
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(resp)
 
-	req.SetRequestURI("https://academia.srmist.edu.in/srm_university/academia-academic-services/page/Academic_Planner_2025_26_ODD")
+	req.SetRequestURI("https://academia.srmist.edu.in/srm_university/academia-academic-services/page/Academic_Planner_2025_26_EVEN")
 	req.Header.SetMethod("GET")
 	req.Header.Set("accept", "*/*")
 	req.Header.Set("accept-language", "en-US,en;q=0.9")
@@ -50,28 +49,34 @@ func (c *CalendarFetcher) GetCalendar() (*types.CalendarResponse, error) {
 	req.Header.Set("Cache-Control", "public, max-age=3600, stale-while-revalidate=7200")
 
 	if err := fasthttp.Do(req, resp); err != nil {
+		log.Printf("CalendarHelper.GetCalendar: failed to fetch calendar - %v", err)
 		return &types.CalendarResponse{
-			Error:   true,
-			Message: err.Error(),
-			Status:  500,
+			Error:    true,
+			Message:  err.Error(),
+			Status:   500,
+			Calendar: []types.CalendarMonth{},
 		}, nil
 	}
 
 	statusCode := resp.StatusCode()
 	if statusCode != fasthttp.StatusOK {
+		log.Printf("CalendarHelper.GetCalendar: server returned status %d", statusCode)
 		return &types.CalendarResponse{
-			Error:   true,
-			Message: fmt.Sprintf("HTTP error: %d", statusCode),
-			Status:  statusCode,
+			Error:    true,
+			Message:  fmt.Sprintf("HTTP error: %d", statusCode),
+			Status:   statusCode,
+			Calendar: []types.CalendarMonth{},
 		}, nil
 	}
 
 	calendar, err := c.parseCalendar(string(resp.Body()))
 	if err != nil {
+		log.Printf("CalendarHelper.GetCalendar: failed to parse calendar - %v", err)
 		return &types.CalendarResponse{
-			Error:   true,
-			Message: err.Error(),
-			Status:  500,
+			Error:    true,
+			Message:  err.Error(),
+			Status:   500,
+			Calendar: []types.CalendarMonth{},
 		}, nil
 	}
 
@@ -86,7 +91,13 @@ func (c *CalendarFetcher) parseCalendar(html string) (*types.CalendarResponse, e
 	} else {
 		parts := strings.Split(html, "zmlvalue=\"")
 		if len(parts) < 2 {
-			return nil, fmt.Errorf("invalid HTML format")
+			log.Printf("CalendarHelper.parseCalendar: invalid HTML format")
+			return &types.CalendarResponse{
+				Error:    true,
+				Message:  "invalid HTML format",
+				Status:   500,
+				Calendar: []types.CalendarMonth{},
+			}, nil
 		}
 		decodedHTML := utils.ConvertHexToHTML(strings.Split(parts[1], "\" > </div> </div>")[0])
 		htmlText = utils.DecodeHTMLEntities(decodedHTML)
@@ -94,7 +105,13 @@ func (c *CalendarFetcher) parseCalendar(html string) (*types.CalendarResponse, e
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlText))
 	if err != nil {
-		return nil, err
+		log.Printf("CalendarHelper.parseCalendar: failed to parse HTML - %v", err)
+		return &types.CalendarResponse{
+			Error:    true,
+			Message:  err.Error(),
+			Status:   500,
+			Calendar: []types.CalendarMonth{},
+		}, nil
 	}
 
 	var monthHeaders []string
