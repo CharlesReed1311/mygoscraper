@@ -1,9 +1,9 @@
 package helpers
 
 import (
-	"fmt"
 	"goscraper/src/types"
 	"goscraper/src/utils"
+	"log"
 	"regexp"
 	"strings"
 
@@ -18,7 +18,8 @@ func GetUser(rawPage string) (*types.User, error) {
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(page))
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse HTML: %v", err)
+		log.Printf("UserHelper.GetUser: failed to parse HTML - %v", err)
+		return &types.User{}, nil
 	}
 
 	data := &types.User{}

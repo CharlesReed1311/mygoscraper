@@ -3,7 +3,7 @@ package helpers
 import (
 	"fmt"
 	"goscraper/src/types"
-
+	"log"
 	"strings"
 )
 
@@ -41,7 +41,12 @@ func (t *Timetable) GetTimetable(batchNumber int) (*types.TimetableResult, error
 	coursePage := NewCoursePage(t.cookie)
 	courseList, err := coursePage.GetCourses()
 	if err != nil {
-		return nil, err
+		log.Printf("TimetableHelper.GetTimetable: failed to get courses - %v", err)
+		return &types.TimetableResult{
+			RegNumber: "",
+			Batch:     fmt.Sprintf("%d", batchNumber),
+			Schedule:  []types.DaySchedule{},
+		}, nil
 	}
 
 	// Select the batch based on the input parameter
@@ -52,7 +57,12 @@ func (t *Timetable) GetTimetable(batchNumber int) (*types.TimetableResult, error
 	case 2:
 		selectedBatch = batch2
 	default:
-		return nil, fmt.Errorf("invalid batch number: %d", batchNumber)
+		log.Printf("TimetableHelper.GetTimetable: invalid batch number %d", batchNumber)
+		return &types.TimetableResult{
+			RegNumber: "",
+			Batch:     fmt.Sprintf("%d", batchNumber),
+			Schedule:  []types.DaySchedule{},
+		}, nil
 	}
 
 	// Map the slots for the selected batch

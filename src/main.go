@@ -11,8 +11,8 @@ import (
 	"goscraper/src/types"
 	"goscraper/src/utils"
 	"log"
-	"os"
 	"net"
+	"os"
 
 	"time"
 
@@ -82,6 +82,7 @@ func main() {
 	}))
 
 	app.Use(func(c *fiber.Ctx) error {
+		fmt.Printf("Request path: %s\n", c.Path())
 		switch c.Path() {
 		case "/login", "/hello":
 			return c.Next()
@@ -172,6 +173,7 @@ func main() {
 	}
 
 	api := app.Group("/", func(c *fiber.Ctx) error {
+		fmt.Printf("Request path: %s\n", c.Path())
 		switch c.Path() {
 		case "/login", "/hello":
 			return c.Next()
@@ -330,6 +332,7 @@ func main() {
 			cachedData["attendance"] != nil &&
 			cachedData["marks"] != nil {
 
+			fmt.Print("I mean cached?")
 			// Always fetch ophour from db and add to cachedData
 			ophour, err := db.GetOphourByToken(encodedToken)
 			if err == nil && ophour != "" {
@@ -338,6 +341,7 @@ func main() {
 
 			go func() {
 				data, err := fetchAllData(token)
+				fmt.Print(data)
 				if err != nil {
 					return
 				}
@@ -377,7 +381,7 @@ func main() {
 		port = "8080"
 	}
 	log.Printf("Starting server on port %s...", port)
-	ln, err := net.Listen("tcp", "[::]:" + port)
+	ln, err := net.Listen("tcp", "[::]:"+port)
 	if err != nil {
 		log.Fatalf("Failed to bind: %v", err)
 	}
@@ -418,11 +422,29 @@ func fetchAllData(token string) (map[string]interface{}, error) {
 	}()
 
 	data := make(map[string]interface{})
+
 	for i := 0; i < 5; i++ {
 		r := <-resultChan
+
 		if r.err != nil {
+			log.Printf(
+				"fetchAllData error | key=%s | err=%v",
+				r.key,
+				r.err,
+			)
+			log.Printf(
+				"partial response so far: %+v",
+				data,
+			)
 			return nil, r.err
 		}
+
+		log.Printf(
+			"fetchAllData success | key=%s | type=%T",
+			r.key,
+			r.data,
+		)
+
 		data[r.key] = r.data
 	}
 
@@ -430,15 +452,24 @@ func fetchAllData(token string) (map[string]interface{}, error) {
 		data["regNumber"] = user.RegNumber
 	}
 
-	// Fetch ophour from database
 	db, err := databases.NewDatabaseHelper()
-	if err == nil {
+	if err != nil {
+		log.Printf("database init failed | err=%v", err)
+	} else {
 		encodedToken := utils.Encode(token)
 		ophour, err := db.GetOphourByToken(encodedToken)
-		if err == nil && ophour != "" {
+		if err != nil {
+			log.Printf(
+				"ophour fetch failed | token=%s | err=%v",
+				encodedToken,
+				err,
+			)
+		} else if ophour != "" {
 			data["ophour"] = ophour
 		}
 	}
+
+	log.Printf("fetchAllData final response: %+v", data)
 
 	return data, nil
 }
