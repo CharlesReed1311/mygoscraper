@@ -45,8 +45,8 @@ func GetUser(rawPage string) (*types.User, error) {
 				data.Name = value
 			case "Program":
 				data.Program = value
-			case "Batch":
-				data.Batch = value
+			case "Combo / Batch":
+				data.Batch = cells.Eq(i + 1).Find("font").Text()
 			case "Mobile":
 				data.Mobile = value
 			case "Semester":
